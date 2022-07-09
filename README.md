@@ -28,6 +28,9 @@
     - [5.4.3. Multiple consumers on one topic](#543-multiple-consumers-on-one-topic)
     - [5.4.4. Consumer offsets](#544-consumer-offsets)
     - [5.4.5. Delivery semants for consumers](#545-delivery-semants-for-consumers)
+  - [5.5. Brokers and Topics](#55-brokers-and-topics)
+    - [5.5.1. Kafka brokers](#551-kafka-brokers)
+    - [5.5.2. Kafka broker discovery](#552-kafka-broker-discovery)
 - [6. Commands](#6-commands)
 - [7. Ui Application](#7-ui-application)
 
@@ -218,6 +221,22 @@
   - Exactly once:
     - For Kafka => Kafka workflow: Use the Transaction API (easy with Kafka Streams API).
     - For Kafka => External System workflows: Use an idempotent consumer.
+
+### 5.5. Brokers and Topics
+
+#### 5.5.1. Kafka brokers
+
+- A Kafka cluster is composed of multiple brokers (servers).
+- Each broker is identified with its ID (integer).
+- Each broker contains certain topic partitions.
+- After connecting to any broker (called a bootstrap broker), you will be connected to the entire cluster (Kafka clients have smart mechanics for that).
+- A good number to get started is 3 brokers, but some big clusters have over 100 brokers.
+
+#### 5.5.2. Kafka broker discovery
+
+- Every Kafka broker is also called a "bootstrap server".
+- That means that you only need to connect to one broker, and the Kafka clients will know how to be connected to the entire cluster (smart clients).
+- Each broker knows about all brokers, topics and partitions (metadata).
 
 ## 6. Commands
 
