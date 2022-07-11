@@ -31,7 +31,19 @@
   - [5.5. Brokers and Topics](#55-brokers-and-topics)
     - [5.5.1. Kafka brokers](#551-kafka-brokers)
     - [5.5.2. Kafka broker discovery](#552-kafka-broker-discovery)
+  - [5.6. Topic replication](#56-topic-replication)
+    - [5.6.1. Replication factor](#561-replication-factor)
+    - [5.6.2. Concept of Leader for a Partition](#562-concept-of-leader-for-a-partition)
+    - [5.6.3. Default producer and consumer behavior with leaders](#563-default-producer-and-consumer-behavior-with-leaders)
+  - [5.7. Producer Acknowledgements and Topic Durability](#57-producer-acknowledgements-and-topic-durability)
+    - [5.7.1. Kafka topic durability](#571-kafka-topic-durability)
+  - [5.8. Zookeeper](#58-zookeeper)
+    - [5.8.1. Should you use Zookeeper?](#581-should-you-use-zookeeper)
+  - [5.9. Fafka KRaft](#59-fafka-kraft)
 - [6. Commands](#6-commands)
+  - [6.1. Topics commands](#61-topics-commands)
+  - [6.2. Producer commands](#62-producer-commands)
+  - [6.3. Consumer commands](#63-consumer-commands)
 - [7. Ui Application](#7-ui-application)
 
 ## 1. Types of problems organisations are facing with manually integration
@@ -94,6 +106,7 @@
 - Any kind of message format.
 - The sequence of messages is called a data stream.
 - You cannot query topics, instead, use Kafka Producers to send data and Kafka Consumers to read the data.
+- **You only need to connect to one broker (any broker) and just provide the topic name you want to read from. Kafka will route your calls to the appropriate brokers and partitions for you!**
 
 #### 5.1.2. Partitions and offsets
 
@@ -101,8 +114,7 @@
   - Messages within each partition are ordered.
   - Each message within a partitions gets an incremental id, called offset.
 - Kafka topics are immutable: once data is written to a partition, it cannot be changed.
-
-![alt](Images/KafkaTopics.png)
+- Kafka Consumer Offsets are stored in Kafka.
 
 #### 5.1.3. Topic example: truck_gps
 
@@ -110,8 +122,6 @@
 - Each truck will send a message to Kafka every 20 seconds, each message will contain the truck ID and the truck position (latitude and longitude).
 - You can have a topic trucks_gps that contain the position of all trucks.
 - We choose to create that topic with 10 partitions (arbitrary number).
-
-![alt](Images/FoodTruckExample.drawio.png)
 
 #### 5.1.4. Important notes
 
@@ -231,14 +241,92 @@
 - Each broker contains certain topic partitions.
 - After connecting to any broker (called a bootstrap broker), you will be connected to the entire cluster (Kafka clients have smart mechanics for that).
 - A good number to get started is 3 brokers, but some big clusters have over 100 brokers.
+- **You only need to connect to one broker (any broker) and just provide the topic name you want to write to. Kafka Clients will route your data to the appropriate brokers and partitions for you!**
 
 #### 5.5.2. Kafka broker discovery
 
 - Every Kafka broker is also called a "bootstrap server".
-- That means that you only need to connect to one broker, and the Kafka clients will know how to be connected to the entire cluster (smart clients).
+- That means that **you only need to connect to one broker**, and the Kafka clients will know how to be connected to the entire cluster (smart clients).
 - Each broker knows about all brokers, topics and partitions (metadata).
 
+### 5.6. Topic replication
+
+#### 5.6.1. Replication factor
+
+- Topics should have a replication factor > 1 (usually between 2 and 3).
+- This way if a broker is down, another broker can serve the data.
+- Example: Topic-A with 2 partitions and replication factor of 2.
+
+#### 5.6.2. Concept of Leader for a Partition
+
+- At any time only ONE broker can be a leader for a given partition.
+- Producers can only send data to the broker that is leader of a partition.
+- The other brokers will replicate the data.
+- Therefore, each partition has one leader and multiple ISR (in-sync replica).
+
+#### 5.6.3. Default producer and consumer behavior with leaders
+
+- Kafka Producers can only write to the leader broker for a partition.
+- Kafka Consumers by default will read from the leader broker for a partition.
+- Since Kafka 2.4 it is possible to configure consumers to read from the closest replica.
+- This may help improve latency, and also decrease network costs if using the cloud.
+
+### 5.7. Producer Acknowledgements and Topic Durability
+
+- Producers can choose to receive acknowledgment of data writes:
+  - acks=0: Producer won't wait for acknowledgment (possible data loss).
+  - acks=1: Producer will wait for leader acknowledgment (limited data loss).
+  - acks=all: Leader + replicas acknowledgment (no data loss).
+
+#### 5.7.1. Kafka topic durability
+
+- For a topic replication factor of 3, topic data durability can withstand 2 brokers loss.
+- As a rule, for a replication factor of N, you can permanently lose up to N-1 brokers and still recover your data.
+
+### 5.8. Zookeeper
+
+- Manages brokers (keeps a list of then).
+- Helps in performing leader election for partitions.
+- Send notification to Kafka in case of changes (e.g. new topic, broker dies, broker comes up, delete topics, etc...).
+- Kafka 2.x can't work without Zookeeper.
+- Kafka 3.x can work without Zookeeper (KIP-500) - using Kafka Raft instead.
+- Kafka 4.x will not have Zookeeper.
+- Zookeeper by design operates with and odd numbers of servers (1,3,5,6).
+- Has a leader (writes) the rest of the servers are followers (reads).
+- (Zookeeper does NOT store consumer offsets with Kafka > v0.10).
+
+#### 5.8.1. Should you use Zookeeper?
+
+- With Kafka Brokers?
+  - Yes, until Kafka 4.0 is out while waiting for Kafka without Zookeeper to be production-ready.
+- With Kafka Clients?
+  - Over time, the Kafka clients and CLI have been migrated to leverage the brokers as a connection endpoint instead of Zookeeper
+  - Since Kafka 0.10, consumers store offset in Kafka and Zookeeper and must not connect to Zookeeper as it is deprecated
+  - Since Kafka 2.2, the `kafka-topics.sh` CLI command references Kafka brokers and not Zookeeper for topic management (create, deletion, etc...) and the Zookeeper CLI argument is deprecated.
+  - All the APIs and commands that were previously leveraging Zookeeper are migrated to use Kafka instead, so that when clusters are migrated to be without Zookeeper, the change is invisible to clients.
+  - Zookeeper is also less secure than Kafka, and therefore Zookepper posts should only be opened to allow traffic from Kafka brokers, and not Kafka clients.
+  - Therefore, to be a great modern-day Kafka developer, never ever use Zookeeper as a configuration in your Kafka clients, and other programs that connect to Kafka.
+
+### 5.9. Fafka KRaft
+
+- In 2020, the Apache Kafka project stated to work to remove the Zookeeper dependency from it (KIP-500).
+- Zookeeper shows scaling issues then Kafka clusters have > 100,000 partitions.
+- By removing Zookeeper, Apache Kafka can:
+  - Scale to millions of partitions, and becomes easier to maintain and set-up.
+  - Improve stability, makes it easier to monitor, support and administer.
+  - Single security model for the whole system.
+  - Single process to start with Kafka.
+  - Faster controller shutdown and recovery time.
+- Kafka 3.X now implements the Raft protocol (KRaft) in order to replace Zookeeper.
+
 ## 6. Commands
+
+- They come bundled with the Kafka binaries.
+- If you setup the $PATH variable correctly (from the Kafka setup part), then you should be able to invoke the CLI from anywhere on your computer.
+- If you installed Kafka using binaries, it should be either `kafka-topics.sh` (Linux, Mac, Windows), `kafka-topics.bat` (Windows non WSL2), `kafka-topics` (homebrew, docker, apt...).
+- Use the `--bootstrap-server` option everywhere, not `--zookeeper`.
+
+### 6.1. Topics commands
 
 - List all topics
   - kafka-topics --bootstrap-server localhost:9092 --list
@@ -251,9 +339,15 @@
   - kafka-topics --bootstrap-server localhost:9092 --create --topic `<name_of_topic>` -- partitions `<number_of_partitions>`
 - Delete topic
   - kafka-topics --bootstrap-server localhost:9092 --delete --topic `<name_of_topic>`
+
+### 6.2. Producer commands
+
 - Produce messages
   - kafka-console-producer --broker-list localhost:9092 --topic `<name_of_topic>`
   - kafka-console-producer --broker-list localhost:9092 --topic `<name_of_topic>` --property parse.key=true --property key.separator=, # Procuce message with key and value, separate by ","
+
+### 6.3. Consumer commands
+
 - Consumer messages
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>`
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --from-beginning
