@@ -40,6 +40,7 @@
   - [5.8. Zookeeper](#58-zookeeper)
     - [5.8.1. Should you use Zookeeper?](#581-should-you-use-zookeeper)
   - [5.9. Fafka KRaft](#59-fafka-kraft)
+  - [5.10. Resume](#510-resume)
 - [6. Commands](#6-commands)
   - [6.1. Topics commands](#61-topics-commands)
   - [6.2. Producer commands](#62-producer-commands)
@@ -319,6 +320,10 @@
   - Faster controller shutdown and recovery time.
 - Kafka 3.X now implements the Raft protocol (KRaft) in order to replace Zookeeper.
 
+### 5.10. Resume
+
+![alt](Images/ResumeTheory.drawio.png)
+
 ## 6. Commands
 
 - They come bundled with the Kafka binaries.
@@ -337,14 +342,16 @@
 - Create topic
   - kafka-topics --bootstrap-server localhost:9092 --create --topic `<name_of_topic>` # Default 1 partition
   - kafka-topics --bootstrap-server localhost:9092 --create --topic `<name_of_topic>` -- partitions `<number_of_partitions>`
+  - kafka-topics --bootstrap-server localhost:9092 --create --topic `<name_of_topic>` -- partitions `<number_of_partitions>` -- replication-factor 2
 - Delete topic
   - kafka-topics --bootstrap-server localhost:9092 --delete --topic `<name_of_topic>`
 
 ### 6.2. Producer commands
 
 - Produce messages
-  - kafka-console-producer --broker-list localhost:9092 --topic `<name_of_topic>`
-  - kafka-console-producer --broker-list localhost:9092 --topic `<name_of_topic>` --property parse.key=true --property key.separator=, # Procuce message with key and value, separate by ","
+  - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>`
+  - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --property parse.key=true --property key.separator=: # Procuce message with key and value, separate by ":"
+  - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --producer-property acks=all
 
 ### 6.3. Consumer commands
 
@@ -353,6 +360,7 @@
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --from-beginning
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --group `<name_of_group>`
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --group `<name_of_group>` --property parse.key=true --property key.separator=,
+  - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --formatter kafka.tools.DefaultMessageFormatter --property print.timestamp=true --property print.key=true --property print.value=true --from-beginning
 
 ## 7. Ui Application
 
