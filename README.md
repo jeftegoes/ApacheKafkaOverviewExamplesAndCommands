@@ -41,11 +41,18 @@
     - [5.8.1. Should you use Zookeeper?](#581-should-you-use-zookeeper)
   - [5.9. Fafka KRaft](#59-fafka-kraft)
   - [5.10. Resume](#510-resume)
-- [6. Commands](#6-commands)
-  - [6.1. Topics commands](#61-topics-commands)
-  - [6.2. Producer commands](#62-producer-commands)
-  - [6.3. Consumer commands](#63-consumer-commands)
-- [7. Ui Application](#7-ui-application)
+- [6. Partitions](#6-partitions)
+  - [6.1. Partitions count and replication factor](#61-partitions-count-and-replication-factor)
+    - [6.1.1. Choosing the partitions count](#611-choosing-the-partitions-count)
+    - [6.1.2. Choosing the replication factor](#612-choosing-the-replication-factor)
+  - [6.2. Cluster guidelines](#62-cluster-guidelines)
+  - [6.3. Topic naming conventions](#63-topic-naming-conventions)
+- [7. Commands](#7-commands)
+  - [7.1. Topics commands](#71-topics-commands)
+  - [7.2. Producer commands](#72-producer-commands)
+  - [7.3. Consumer commands](#73-consumer-commands)
+  - [7.4. Consumer groups](#74-consumer-groups)
+- [8. Ui Application](#8-ui-application)
 
 ## 1. Types of problems organisations are facing with manually integration
 
@@ -324,14 +331,86 @@
 
 ![alt](Images/ResumeTheory.drawio.png)
 
-## 6. Commands
+## 6. Partitions
+
+### 6.1. Partitions count and replication factor
+
+- The **two most important** parameters when creating a topic.
+- They impact performance and durability of the system overall.
+- It is best to get the parameters right the first time!
+  - If the partitions count increases during a topic lifecycle, you will break your keys ordering guarantees.
+  - If the replication factor increases during a topic lifecycle, you put more pressure on your cluster, which can lead to unexpected performance decrease.
+
+#### 6.1.1. Choosing the partitions count
+
+- Each partition can handle a throughput of a few MB/s (measure it for your project).
+- More partitions implies:
+  - Better parallelism, better throughput.
+  - Ability to run more consumers in a group to scale (max as many consumers per group as partitions).
+  - Ability to leverage more brokers if you have a large cluster.
+  - BUT more election to perform for Zookeeper (if using Zookeeper).
+  - BUT more files opened on Kafka.
+- Guidelines:
+  - **Partitions per topic = great question!**
+    - (Intuition) Small cluster (< 6 brokers): 3x #brokers.
+    - (Intuition) Big cluster (> 12 brokers): 2x #of Brokers.
+    - Adjust for number of consumers you need to run in parallel at peak throughput.
+    - Adjust for producer throughput (increase if super-high throughput or projected increase in the next 2 years).
+    - **Every Kafka cluster will have different performance.**
+    - Don't systematically create topics with 1000 partitions!
+
+#### 6.1.2. Choosing the replication factor
+
+- Should be at least 2, usually 3, maximum 4.
+- The higher the replication factor (N):
+  - Better durability of your system (N-1 brokers can fail).
+  - Better availability of your system (N-min.insync.replicas if producer acks=all).
+  - BUT more replication (higher latency if acks=all).
+  - BUT more disk space on your system (50% more if RF is 3 instead of 2).
+- Guidelines:
+  - Set it to 3 to get started (you must have at least 3 brokers for that).
+  - If replication performance is an issue, get a better broker instead of less RF.
+  - Never set it to 1 in production.
+
+### 6.2. Cluster guidelines
+
+- Total number of partitions in the cluster:
+  - Kafka with Zookeeper: max 200,000 partitions (Nov 2018) - Zookeeper Scaling limit.
+    - Still recommend a maximum of 4,000 partitions per broker (soft limit).
+  - Kafka with KRaft: potentially millions of partition.
+- If you need more partitions in your cluster, add brokers instead.
+- If you need more than 200,000 partitions in your cluster (it will take time to get there!), follow the Netflix model and create more Kafka clusters.
+- Overall, you don't need a topic with 1000 partitions to achieve high throughput. Start at a reasonable number and test the performance.
+
+### 6.3. Topic naming conventions
+
+- Naming a topic is "free-for-all".
+- It's better to enforce guidelines in your cluster to ease management.
+- You are free to come up with your own guideline.
+- From: https://cnr.sh/essays/how-paint-bike-shed-kafka-topic-naming-conventions
+  - `<message type>.<dataset name>.<data name>.<data format>`
+  - Message type:
+    - logging
+    - queuing
+    - tracking
+    - etl/db
+    - streaming
+    - push
+    - environments
+    - user
+  - The dataset name is analogous to a database name in traditional RDBMS systems. It's used as a category to group topics together.
+  - The data name field is analogous to a table name in traditional RDBMS systems, though it's fine to include further dotted notation if developers wish to impose their own hierarchy within the dataset namespace.
+  - The data format for example .avro, .json, .text, .protobuf, .csv, .log.
+  - Use snake_case.
+
+## 7. Commands
 
 - They come bundled with the Kafka binaries.
 - If you setup the $PATH variable correctly (from the Kafka setup part), then you should be able to invoke the CLI from anywhere on your computer.
 - If you installed Kafka using binaries, it should be either `kafka-topics.sh` (Linux, Mac, Windows), `kafka-topics.bat` (Windows non WSL2), `kafka-topics` (homebrew, docker, apt...).
 - Use the `--bootstrap-server` option everywhere, not `--zookeeper`.
 
-### 6.1. Topics commands
+### 7.1. Topics commands
 
 - List all topics
   - kafka-topics --bootstrap-server localhost:9092 --list
@@ -346,23 +425,33 @@
 - Delete topic
   - kafka-topics --bootstrap-server localhost:9092 --delete --topic `<name_of_topic>`
 
-### 6.2. Producer commands
+### 7.2. Producer commands
 
 - Produce messages
   - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>`
   - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --property parse.key=true --property key.separator=: # Procuce message with key and value, separate by ":"
   - kafka-console-producer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --producer-property acks=all
 
-### 6.3. Consumer commands
+### 7.3. Consumer commands
 
 - Consumer messages
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>`
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --from-beginning
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --group `<name_of_group>`
-  - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --group `<name_of_group>` --property parse.key=true --property key.separator=,
+  - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --group `<name_of_group>` --property parse.key=true --property key.separator=:
+- With more informations
   - kafka-console-consumer --bootstrap-server localhost:9092 --topic `<name_of_topic>` --formatter kafka.tools.DefaultMessageFormatter --property print.timestamp=true --property print.key=true --property print.value=true --from-beginning
 
-## 7. Ui Application
+### 7.4. Consumer groups
+
+- List consumer groups
+  - kafka-consumer-groups --bootstrap-server localhost:9092 --list
+- Detail about specif group
+  - kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group `<name_of_group>`
+- Reset offset
+  - kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group `<name_of_group>` --reset-offsets --to-earliest --execute --all-topics
+
+## 8. Ui Application
 
 - Conduktor UI
   - Desktop
